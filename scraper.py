@@ -14,21 +14,30 @@ def _get_page(url, params=None):
 
 
 def find_poster_url(title):
-    """Search Wikipedia, open the movie page, and read the image from its infobox."""
-    query = f"{title} film"
-    soup = _get_page(f"{BASE}/w/index.php", params={"search": query, "go": "Go"})
+    """Search Wikipedia API and return the poster of the best matching page."""
+    params = {
+        "action": "query", "format": "json",
+        "generator": "search", "gsrsearch": f"{title} film",
+        "gsrlimit": 5, "prop": "pageimages",
+        "pithumbsize": 500,
+        "pilicense": "any",          # allow non-free images like posters
+    }
+    response = requests.get(f"{BASE}/w/api.php", params=params,
+                            headers=HEADERS, timeout=8)
+    response.raise_for_status()
+    pages = response.json().get("query", {}).get("pages", {})
+    pages = sorted(pages.values(), key=lambda p: p["index"])
 
-    if soup.find("table", class_="infobox") is None:       # landed on search results
-        first = soup.select_one("div.mw-search-result-heading a")
-        if first is None:
-            return None
-        soup = _get_page(BASE + first["href"])
+    # first choice: a page with "film" in its title (Titanic (1997 film))
+    for page in pages:
+        if "film" in page["title"].lower() and "thumbnail" in page:
+            return page["thumbnail"]["source"]
 
-    image = soup.select_one("table.infobox img")
-    if image is None:
-        return None
-    src = image["src"]
-    return "https:" + src if src.startswith("//") else src
+    # second choice: first result that has any image (The Godfather)
+    for page in pages:
+        if "thumbnail" in page:
+            return page["thumbnail"]["source"]
+    return None
 
 
 def get_poster_bytes(title):
