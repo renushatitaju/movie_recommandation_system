@@ -1,0 +1,8 @@
+pandas
+scikit-learn
+nltk
+requests
+beautifulsoup4
+pillow
+matplotlib
+spacy
