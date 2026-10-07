@@ -1,13 +1,20 @@
-"""Step 3: Tkinter GUI. Run this file:  python gui.py"""
+"""Step 3: Tkinter GUI. Run train.py once, then run this file:  python gui.py"""
 import io
+import json
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+import joblib
 from PIL import Image, ImageTk
 
 from cleandata import load_movies
 from compare import hand_test_score
 from recommender import MovieRecommender, NoMatchError
 from scraper import get_poster_bytes
+
+MODEL_PATH = "data/tfidf_model.pkl"
+ACCURACY_PATH = "data/accuracy.json"
 
 TFIDF, SPACY, HYBRID = "TF-IDF + KNN", "spaCy vectors", "Hybrid (TF-IDF + spaCy)"
 MODEL_NAMES = [TFIDF, SPACY, HYBRID]
@@ -24,13 +31,13 @@ class CineMatchApp:
         root.title("CineMatch")
         root.geometry("950x580")
 
-        self.tfidf = None          # always built: also used for the k-means themes
+        self.tfidf = None          # always loaded: also used for the k-means themes
         self.models = {}           # name -> model, built the first time it is selected
         self.recommender = None    # the model currently in use
         self.model_name = TFIDF
         self.results = None
         self.photo = None          # keep a reference, otherwise Tkinter drops the image
-        self.accuracy = None
+        self.accuracy = None       # {"train": ..., "test": ...} saved by train.py
         self.hand_hits = (0, 0)
 
         # ---- top bar ----
@@ -72,7 +79,8 @@ class CineMatchApp:
         self.overview = tk.Text(info, wrap="word", height=14, width=48, state="disabled")
         self.overview.pack(fill="both", expand=True)
 
-        self.status = ttk.Label(root, text="Loading data and models (the first spaCy run takes a few minutes)...", relief="sunken", anchor="w")
+        self.status = ttk.Label(root, text="Loading data and models (the first spaCy run takes a few minutes)...",
+                                relief="sunken", anchor="w")
         self.status.pack(fill="x", side="bottom")
 
         root.after(100, self.load_models)
@@ -80,13 +88,21 @@ class CineMatchApp:
     # ---------- models ----------
     def load_models(self):
         try:
-            df = load_movies()
+            if os.path.exists(MODEL_PATH):
+                self.tfidf = joblib.load(MODEL_PATH)             # saved by train.py
+            else:                                                # train.py was not run yet
+                self.tfidf = MovieRecommender(load_movies(), mode="lemma",
+                                              text_column="full_text", sublinear_tf=True)
+                self.tfidf.build_clusters(15)
         except FileNotFoundError as error:
             messagebox.showerror("Data missing", str(error))
             self.root.destroy()
             return
-        self.tfidf = MovieRecommender(df, mode="lemma", text_column="full_text", sublinear_tf=True)
-        self.tfidf.build_clusters(15)
+
+        if os.path.exists(ACCURACY_PATH):
+            with open(ACCURACY_PATH) as file:
+                self.accuracy = json.load(file)
+
         self.models[TFIDF] = self.tfidf
         if not self.activate(HYBRID, quiet=True):      # best model; needs spaCy
             self.activate(TFIDF)                       # fallback
@@ -117,13 +133,8 @@ class CineMatchApp:
         self.recommender = model
         self.model_name = name
         self.model_box.set(name)
-        self.status.config(text="Testing the model...")
-        self.root.update_idletasks()
-        self.accuracy = model.evaluate()
         self.hand_hits = hand_test_score(model)
-        self.status.config(
-            text=f"Ready. {len(self.tfidf.df)} movies  |  Model: {name}  |  Top-5 accuracy: {self.accuracy:.0%}"
-        )
+        self.status.config(text=f"Ready. {len(self.tfidf.df)} movies  |  Model: {name}")
         return True
 
     def show_model_info(self):
@@ -132,15 +143,20 @@ class CineMatchApp:
             return
         hits, total = self.hand_hits
         hand = f"{hits} of {total} in the top 5" if total else "no test movies found in the data"
+        if self.accuracy:
+            accuracy = (f"TF-IDF top-5 accuracy:\n"
+                        f"   Train: {self.accuracy['train']:.1%}     Test: {self.accuracy['test']:.1%}\n"
+                        "   (query = half the words of a movie's description;\n"
+                        "    correct if that movie is in the top 5)\n")
+        else:
+            accuracy = "Accuracy: run train.py first.\n"
         messagebox.showinfo(
             "Model info",
             f"Recommendation model: {self.model_name}\n"
             f"   {DESCRIPTIONS[self.model_name]}\n"
             "Theme model: k-means (15 clusters)\n"
             f"Movies: {len(self.tfidf.df)}\n\n"
-            f"Top-5 accuracy: {self.accuracy:.1%}\n"
-            "   For 500 random movies, a query made of half the words of\n"
-            "   its description. Correct if that movie is in the top 5.\n\n"
+            f"{accuracy}\n"
             f"Hand-written test queries: {hand}",
         )
 

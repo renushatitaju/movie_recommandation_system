@@ -4,7 +4,6 @@ spaCy vectors know that words with similar meaning are close together
 ("dinosaur" is near "extinct animal"), which TF-IDF cannot do.
 """
 import os
-import random
 
 import numpy as np
 import spacy
@@ -29,20 +28,6 @@ class SimilarityRecommender:
         results["similarity"] = scores[top]
         return results[["title", "similarity", "overview"]]
 
-    def evaluate(self, sample_size=500, top_n=5, seed=42):
-        """Top-5 accuracy (self-retrieval test), same test as MovieRecommender.evaluate()."""
-        rng = random.Random(seed)
-        n = min(sample_size, len(self.df))
-        picked = rng.sample(range(len(self.df)), n)
-        hits = 0
-        for i in picked:
-            words = self.df.loc[i, "overview"].split()
-            query = " ".join(rng.sample(words, max(1, len(words) // 2)))
-            top = self.similarities(query).argsort()[::-1][:top_n]
-            if i in top:
-                hits += 1
-        return hits / n
-
 
 class SpacyRecommender(SimilarityRecommender):
     def __init__(self, df, text_column="full_text", model="en_core_web_md"):
@@ -56,7 +41,8 @@ class SpacyRecommender(SimilarityRecommender):
         if self.nlp.vocab.vectors_length == 0:
             raise RuntimeError("This spaCy model has no word vectors. Use en_core_web_md.")
 
-        # Turning 4,800 texts into vectors is slow, so the result is saved to a file (binary file handling)
+        # Turning 4,800 texts into vectors is slow, so the result is saved to a file.
+        # If you change the cleaning or the text column, delete this file.
         cache_file = f"data/spacy_vectors_{model}_{len(self.df)}.npy"
         if os.path.exists(cache_file):
             self.matrix = np.load(cache_file)

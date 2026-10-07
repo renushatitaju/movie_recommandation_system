@@ -1,7 +1,8 @@
-"""Choose K for k-means (elbow plot) and look at the cluster sizes."""
+"""Choose K for k-means (elbow plot) and look at the cluster sizes.
+Run:  python elbow.py
+"""
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from cleandata import load_movies
 from recommender import MovieRecommender
@@ -10,12 +11,12 @@ K_VALUES = [5, 10, 15, 20, 25, 30]
 CHOSEN_K = 15
 
 df = load_movies()
-matrix = TfidfVectorizer().fit_transform(df["clean_full"])
+rec = MovieRecommender(df, mode="lemma", text_column="full_text", sublinear_tf=True)
 
 # ---- elbow plot: inertia = how spread out the clusters are (lower = tighter) ----
 inertias = []
 for k in K_VALUES:
-    model = KMeans(n_clusters=k, random_state=42, n_init=3).fit(matrix)
+    model = KMeans(n_clusters=k, random_state=42, n_init=3).fit(rec.matrix)
     inertias.append(model.inertia_)
     print(f"K={k:<3} inertia={model.inertia_:.1f}")
 
@@ -28,7 +29,6 @@ plt.tight_layout()
 plt.savefig("elbow.png")
 
 # ---- cluster sizes and theme words for the chosen K ----
-rec = MovieRecommender(df)
 rec.build_clusters(CHOSEN_K)
 sizes = rec.df["cluster"].value_counts().sort_index()
 for i, count in sizes.items():

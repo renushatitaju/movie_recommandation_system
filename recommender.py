@@ -26,14 +26,9 @@ class MovieRecommender:
         self.mode = mode
         self.text_column = text_column
 
-        # 1. text -> numbers (TF-IDF)
-        ready = PRECOMPUTED.get(text_column)
-        if mode == "lemma" and ready in self.df.columns:
-            cleaned = self.df[ready]                     # already cleaned by cleandata.py
-        else:
-            cleaned = self.df[text_column].apply(lambda text: preprocess(text, mode))
+        # 1. text -> numbers (TF-IDF). This is the "training": it learns the vocabulary and IDF.
         self.vectorizer = TfidfVectorizer(**tfidf_params)
-        self.matrix = self.vectorizer.fit_transform(cleaned)
+        self.matrix = self.vectorizer.fit_transform(self._clean_column(self.df))
 
         # 2. KNN: "training" only stores the movie vectors
         self.knn = NearestNeighbors(metric="cosine", algorithm="brute")
@@ -42,6 +37,13 @@ class MovieRecommender:
         # 3. k-means is built separately with build_clusters()
         self.kmeans = None
         self.cluster_names = {}
+
+    def _clean_column(self, frame):
+        """Cleaned text of the movies in frame (uses the column made by cleandata.py if possible)."""
+        ready = PRECOMPUTED.get(self.text_column)
+        if self.mode == "lemma" and ready in frame.columns:
+            return frame[ready]
+        return frame[self.text_column].apply(lambda text: preprocess(text, self.mode))
 
     # ---------- KNN search ----------
     def recommend(self, query, top_n=5):
@@ -86,31 +88,23 @@ class MovieRecommender:
         return self.cluster_names[self.kmeans.predict(query_vec)[0]]
 
     # ---------- evaluation ----------
-    def evaluate(self, sample_size=500, top_n=5, seed=42):
-        """Top-5 accuracy (self-retrieval test).
-        For random movies, build a query from a random half of the words of its description.
-        It counts as correct if that same movie appears in the top 5 results."""
-        rng = random.Random(seed)
-        n = min(sample_size, len(self.df))
-        picked = rng.sample(range(len(self.df)), n)
+    def evaluate_on(self, part, top_n=5, seed=42):
+        """Top-5 accuracy on a set of movies (part = a part of the dataframe).
+        Each movie gets a query made of a random half of its overview words.
+        It counts as correct if that movie is in the top 5 results.
+        The vectorizer is the one learned in __init__, so use movies it was trained on
+        (train accuracy) or movies it has never seen (test accuracy)."""
+        part = part.reset_index(drop=True)
+        pool = self.vectorizer.transform(self._clean_column(part))
+        knn = NearestNeighbors(metric="cosine", algorithm="brute").fit(pool)
 
+        rng = random.Random(seed)
         queries = []
-        for i in picked:
-            words = self.df.loc[i, "overview"].split()
+        for overview in part["overview"]:
+            words = overview.split()
             queries.append(" ".join(rng.sample(words, max(1, len(words) // 2))))
 
         vectors = self.vectorizer.transform([preprocess(q, self.mode) for q in queries])
-        _, indices = self.knn.kneighbors(vectors, n_neighbors=min(top_n, len(self.df)))
-        hits = sum(1 for i, row in zip(picked, indices) if i in row)
-        return hits / n
-
-
-if __name__ == "__main__":
-    from cleandata import load_movies
-
-    rec = MovieRecommender(load_movies())
-    rec.build_clusters()
-    query = "space exploration with a twist ending"
-    print(rec.recommend(query))
-    print("Theme:", rec.theme_of(query))
-    print(f"Top-5 accuracy: {rec.evaluate():.0%}")
+        _, indices = knn.kneighbors(vectors, n_neighbors=min(top_n, len(part)))
+        hits = sum(1 for i, row in enumerate(indices) if i in row)
+        return hits / len(part)

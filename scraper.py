@@ -1,20 +1,13 @@
-"""Web scraping: find a movie poster on Wikipedia (requests + BeautifulSoup)."""
+"""Find a movie poster using the Wikipedia API (requests)."""
 import requests
-from bs4 import BeautifulSoup
 
 BASE = "https://en.wikipedia.org"
 HEADERS = {"User-Agent": "CineMatchStudentProject/1.0 (educational use)"}
-_cache = {}   # title -> image bytes, so we never scrape the same movie twice
-
-
-def _get_page(url, params=None):
-    response = requests.get(url, params=params, headers=HEADERS, timeout=8)
-    response.raise_for_status()
-    return BeautifulSoup(response.text, "html.parser")
+_cache = {}   # title -> image bytes, so we never download the same poster twice
 
 
 def find_poster_url(title):
-    """Search Wikipedia API and return the poster of the best matching page."""
+    """Search Wikipedia and return the poster link of the best matching page."""
     params = {
         "action": "query", "format": "json",
         "generator": "search", "gsrsearch": f"{title} film",
@@ -28,12 +21,12 @@ def find_poster_url(title):
     pages = response.json().get("query", {}).get("pages", {})
     pages = sorted(pages.values(), key=lambda p: p["index"])
 
-    # first choice: a page with "film" in its title (Titanic (1997 film))
+    # first choice: a page with "film" in its title, e.g. Titanic (1997 film)
     for page in pages:
         if "film" in page["title"].lower() and "thumbnail" in page:
             return page["thumbnail"]["source"]
 
-    # second choice: first result that has any image (The Godfather)
+    # second choice: first result that has any image, e.g. The Godfather
     for page in pages:
         if "thumbnail" in page:
             return page["thumbnail"]["source"]
@@ -52,9 +45,10 @@ def get_poster_bytes(title):
         response.raise_for_status()
         _cache[title] = response.content
         return response.content
-    except requests.RequestException:
-        return None          # no internet / blocked / not found
+    except requests.RequestException as error:
+        print("Poster error:", error)      # shows the real problem in the terminal
+        return None
 
 
 if __name__ == "__main__":
-    print(find_poster_url("Avatar"))
+    print(find_poster_url("Titanic"))

@@ -1,4 +1,6 @@
-"""Compare different settings and see which recommends best."""
+"""Compare different settings and see which recommends best.
+Run:  python compare.py
+"""
 from cleandata import load_movies
 from recommender import MovieRecommender, NoMatchError
 
@@ -22,13 +24,19 @@ TESTS = [
 
 # (label, MovieRecommender settings)
 CONFIGS = [
-    ("overview | none",      dict(mode="none", text_column="overview")),
-    ("overview | stem",      dict(mode="stem", text_column="overview")),
-    ("overview | lemma",     dict(mode="lemma", text_column="overview")),
-    ("full text | lemma",    dict(mode="lemma", text_column="full_text")),
-    ("+ sublinear tf",       dict(mode="lemma", text_column="full_text", sublinear_tf=True)),
-    ("+ bigrams",            dict(mode="lemma", text_column="full_text", sublinear_tf=True, ngram_range=(1, 2))),
+    ("overview | none",   dict(mode="none", text_column="overview")),
+    ("overview | stem",   dict(mode="stem", text_column="overview")),
+    ("overview | lemma",  dict(mode="lemma", text_column="overview")),
+    ("full text | lemma", dict(mode="lemma", text_column="full_text")),
+    ("+ sublinear tf",    dict(mode="lemma", text_column="full_text", sublinear_tf=True)),
+    ("+ bigrams",         dict(mode="lemma", text_column="full_text", sublinear_tf=True, ngram_range=(1, 2))),
 ]
+
+
+def available_tests(df):
+    """Only the test queries whose movie exists in the data."""
+    titles = set(df["title"])
+    return [t for t in TESTS if t[1] in titles]
 
 
 def rank_of(recommender, query, expected):
@@ -42,8 +50,7 @@ def rank_of(recommender, query, expected):
 
 def hand_test_score(recommender, top_n=5):
     """(hits, total) for the hand-written test queries whose movie exists in the data."""
-    titles = set(recommender.df["title"])
-    tests = [t for t in TESTS if t[1] in titles]
+    tests = available_tests(recommender.df)
     hits = 0
     for query, title in tests:
         rank = rank_of(recommender, query, title)
@@ -69,9 +76,9 @@ def build_models(df):
 
 def main():
     df = load_movies()
-    tests = [t for t in TESTS if (df["title"] == t[1]).any()]
-    for query, title in TESTS:
-        if (query, title) not in tests:
+    tests = available_tests(df)
+    for _, title in TESTS:
+        if title not in set(df["title"]):
             print(f"Skipped (not in dataset): {title}")
     if not tests:
         print("None of the test movies are in the dataset. Edit TESTS.")

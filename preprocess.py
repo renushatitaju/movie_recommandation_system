@@ -1,5 +1,5 @@
-"""Preprocessing with a choice of mode ('none', 'stem', 'lemma'). Used by recommender.py and compare.py.
-The cleaning steps themselves live in cleandata.py so there is only one copy of them."""
+"""Preprocessing with a choice of mode ('none', 'stem', 'lemma').
+Used by recommender.py. The cleaning steps live in cleandata.py, so there is only one copy."""
 from nltk.stem import PorterStemmer
 
 from cleandata import regex_clean, tokenize, remove_stopwords, lemmatize_tokens
